@@ -5,6 +5,11 @@ __pycache__/
 
 # C extensions
 *.so
+*.pt
+
+# Folder
+RBK_TDT17/
+tracked_output/
 
 # Distribution / packaging
 .Python
