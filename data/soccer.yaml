@@ -1,0 +1,7 @@
+names:
+  0: ball
+  1: player
+nc: 2
+path: /home/august/Documents/TDT4265_Mini_project
+train: /home/august/Documents/TDT4265_Mini_project/RBK_TDT17/1_train-val_1min_aalesund_from_start
+val: /home/august/Documents/TDT4265_Mini_project/RBK_TDT17/2_train-val_1min_after_goal
