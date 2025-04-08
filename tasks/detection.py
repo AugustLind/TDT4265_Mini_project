@@ -4,7 +4,7 @@ import cv2
 import os
 
 system_directory = os.getcwd()
-model_path = f"{system_directory}/models/yolo12x.pt"
+model_path = f"{system_directory}/runs/soccer/player_ball_detection/weights/best.pt"
 
 ellipse_annotator = sv.EllipseAnnotator()
 triangle_annotator = sv.TriangleAnnotator()

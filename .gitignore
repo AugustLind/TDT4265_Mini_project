@@ -10,6 +10,9 @@ __pycache__/
 # Folder
 RBK_TDT17/
 tracked_output/
+runs/
+dataset/
+data/
 
 # Distribution / packaging
 .Python

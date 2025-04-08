@@ -8,14 +8,15 @@ import glob
 
 def create_dataset_yaml(output_path='data/soccer.yaml'):
     base_dir = os.path.dirname(os.path.abspath(__file__))
+    dataset_dir = os.path.join(base_dir, 'dataset')
     
     dataset_config = {
-        'path': base_dir,
-        'train': os.path.join(base_dir, 'RBK_TDT17/1_train-val_1min_aalesund_from_start'),
-        'val': os.path.join(base_dir, 'RBK_TDT17/2_train-val_1min_after_goal'),
+        'path': dataset_dir,
+        'train': os.path.join(dataset_dir, 'train', 'images'),
+        'val': os.path.join(dataset_dir, 'val', 'images'),
         'names': {
             0: 'ball',
-            1: 'player'
+            1: 'person'
         },
         'nc': 2
     }
@@ -67,7 +68,12 @@ def convert_gt_to_yolo_format(gt_dir, output_dir, img_dir):
                 continue
                 
             frame_id = int(parts[0])
-            class_id = int(parts[7]) - 1
+            original_class_id = int(parts[7])
+            
+            if original_class_id == 1:
+                class_id = 0
+            else:
+                class_id = 1
             
             x, y = float(parts[2]), float(parts[3])
             width, height = float(parts[4]), float(parts[5])
@@ -168,47 +174,46 @@ def modify_image_paths(img_dir, labels_dir):
 def prepare_yolo_dataset(check_names=True):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
+    # Define YOLOv8 standard directory structure
+    dataset_dir = os.path.join(base_dir, 'dataset')
+    train_images_dir = os.path.join(dataset_dir, 'train', 'images')
+    train_labels_dir = os.path.join(dataset_dir, 'train', 'labels')
+    val_images_dir = os.path.join(dataset_dir, 'val', 'images')
+    val_labels_dir = os.path.join(dataset_dir, 'val', 'labels')
+    
+    # Create directories if they don't exist
+    os.makedirs(train_images_dir, exist_ok=True)
+    os.makedirs(train_labels_dir, exist_ok=True)
+    os.makedirs(val_images_dir, exist_ok=True)
+    os.makedirs(val_labels_dir, exist_ok=True)
+    
+    # Paths for training data
     train_gt_dir = os.path.join(base_dir, 'RBK_TDT17/1_train-val_1min_aalesund_from_start/gt')
     train_img1_dir = os.path.join(base_dir, 'RBK_TDT17/1_train-val_1min_aalesund_from_start/img1')
-    train_images_dir = os.path.join(base_dir, 'RBK_TDT17/1_train-val_1min_aalesund_from_start/images')
-    train_labels_dir = os.path.join(base_dir, 'RBK_TDT17/1_train-val_1min_aalesund_from_start/labels')
     
+    # Paths for validation data
     val_gt_dir = os.path.join(base_dir, 'RBK_TDT17/2_train-val_1min_after_goal/gt')
     val_img1_dir = os.path.join(base_dir, 'RBK_TDT17/2_train-val_1min_after_goal/img1')
-    val_images_dir = os.path.join(base_dir, 'RBK_TDT17/2_train-val_1min_after_goal/images')
-    val_labels_dir = os.path.join(base_dir, 'RBK_TDT17/2_train-val_1min_after_goal/labels')
-    
-    os.makedirs(train_labels_dir, exist_ok=True)
-    os.makedirs(val_labels_dir, exist_ok=True)
-    os.makedirs(train_images_dir, exist_ok=True)
-    os.makedirs(val_images_dir, exist_ok=True)
     
     print(f"Copying/linking images to YOLOv8 standard directory structure...")
     
+    # Copy training images
     for img_file in os.listdir(train_img1_dir):
         if img_file.endswith('.jpg'):
             src = os.path.join(train_img1_dir, img_file)
             dst = os.path.join(train_images_dir, img_file)
             if not os.path.exists(dst):
-                try:
-                    os.symlink(os.path.abspath(src), dst)
-                except (OSError, AttributeError):
-                    shutil.copy2(src, dst)
+                shutil.copy(src, dst)
     
+    # Copy validation images
     for img_file in os.listdir(val_img1_dir):
         if img_file.endswith('.jpg'):
             src = os.path.join(val_img1_dir, img_file)
             dst = os.path.join(val_images_dir, img_file)
             if not os.path.exists(dst):
-                try:
-                    os.symlink(os.path.abspath(src), dst)
-                except (OSError, AttributeError):
-                    shutil.copy2(src, dst)
+                shutil.copy(src, dst)
     
-    if check_names:
-        modify_image_paths(train_images_dir, train_labels_dir)
-        modify_image_paths(val_images_dir, val_labels_dir)
-    
+    # Convert ground truth to YOLO format
     train_count = convert_gt_to_yolo_format(train_gt_dir, train_labels_dir, train_images_dir)
     val_count = convert_gt_to_yolo_format(val_gt_dir, val_labels_dir, val_images_dir)
     
@@ -216,6 +221,7 @@ def prepare_yolo_dataset(check_names=True):
         print("Warning: No labels were created. Please check your ground truth files.")
         return False
     
+    # Verify dataset integrity
     train_images_list = set([os.path.splitext(f)[0] for f in os.listdir(train_images_dir) if f.endswith('.jpg')])
     train_labels_list = set([os.path.splitext(f)[0] for f in os.listdir(train_labels_dir) if f.endswith('.txt')])
     
