@@ -6,7 +6,7 @@ import cv2
 import glob
 
 system_directory = os.getcwd()
-model_path = f"{system_directory}/runs/soccer/player_ball_detection/weights/best.pt"
+model_path = f"{system_directory}/models/best.pt"
 
 ellipse_annotator = sv.EllipseAnnotator()
 label_annotator = sv.LabelAnnotator(
