@@ -143,3 +143,5 @@ The notebook demonstrates how to:
 - **Model not found**: Check that you have the model file in `models/best.pt` 
 - **Dataset errors**: Verify the RBK_TDT17 directory structure matches expectations
 - **Memory issues**: Try reducing batch size in `train_yolo.py`
+https://huggingface.co/uisikdag/yolo-v8-football-players-detection
+https://huggingface.co/keremberke/yolov5n-football

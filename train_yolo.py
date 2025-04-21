@@ -42,6 +42,7 @@ def convert_gt_to_yolo_format(gt_dir, output_dir, img_dir):
         print(f"Error: No JPG images found in {img_dir}")
         return 0
     
+    # Read dimensions from first image
     first_img_path = os.path.join(img_dir, img_files[0])
     try:
         with Image.open(first_img_path) as img:
@@ -69,205 +70,160 @@ def convert_gt_to_yolo_format(gt_dir, output_dir, img_dir):
                 
             frame_id = int(parts[0])
             original_class_id = int(parts[7])
-            
-            if original_class_id == 1:
-                class_id = 0
-            else:
-                class_id = 1
+            # remap IDs: 1->ball (0), others->person (1)
+            class_id = 0 if original_class_id == 1 else 1
             
             x, y = float(parts[2]), float(parts[3])
             width, height = float(parts[4]), float(parts[5])
             
+            # normalize
             x_center = (x + width / 2) / img_width
             y_center = (y + height / 2) / img_height
             norm_width = width / img_width
             norm_height = height / img_height
-            
-            if frame_id not in frame_annotations:
-                frame_annotations[frame_id] = []
-            
             x_center = max(0, min(1, x_center))
             y_center = max(0, min(1, y_center))
             norm_width = max(0, min(1, norm_width))
             norm_height = max(0, min(1, norm_height))
             
-            frame_annotations[frame_id].append(f"{class_id} {x_center} {y_center} {norm_width} {norm_height}")
+            frame_annotations.setdefault(frame_id, []).append(
+                f"{class_id} {x_center} {y_center} {norm_width} {norm_height}"
+            )
     
+    # clear old labels in output_dir
     for old_label in glob.glob(os.path.join(output_dir, '*.txt')):
         os.remove(old_label)
     
     labels_created = 0
     for frame_id, annotations in frame_annotations.items():
+        # determine label filename
         if frame_id in frame_to_image:
             img_filename = frame_to_image[frame_id]
             label_filename = os.path.splitext(img_filename)[0] + '.txt'
         else:
             label_filename = f"{frame_id:06d}.txt"
-        
         label_path = os.path.join(output_dir, label_filename)
-        with open(label_path, 'w') as f:
-            for annotation in annotations:
-                f.write(annotation + '\n')
+        with open(label_path, 'w') as of:
+            of.write("\n".join(annotations) + "\n")
         labels_created += 1
     
     print(f"Converted {labels_created} frames to YOLO format in {output_dir}")
     return labels_created
 
-def train_yolo_model(data_path, weights_path='yolov8s.pt', epochs=50, batch_size=16, img_size=640,
-                     save_period=5, device='0', project='runs/soccer', name='player_ball_detection'):
-    model = YOLO(weights_path)
-    
-    results = model.train(
-        data=data_path,
-        epochs=epochs,
-        batch=batch_size,
-        imgsz=img_size,
-        save_period=save_period,
-        device=device,
-        project=project,
-        name=name,
-        verbose=True,
-        patience=20,
-        cos_lr=True,
-        lr0=0.001,
-        lrf=0.0001,
-        momentum=0.937,
-        weight_decay=0.0005,
-        warmup_epochs=3.0,
-        warmup_momentum=0.8,
-        warmup_bias_lr=0.1,
-        box=7.5,
-        cls=0.5,
-        dfl=1.5,
-        hsv_h=0.015,
-        hsv_s=0.7,
-        hsv_v=0.4,
-        translate=0.1,
-        scale=0.5,
-        fliplr=0.5,
-        mosaic=1.0,
-        cache=False
-    )
-    
-    final_weights_path = f"{project}/{name}/weights/best.pt"
-    print(f"Training complete. Best model saved to {final_weights_path}")
-    
-    return model
-
-def modify_image_paths(img_dir, labels_dir):
-    img_files = sorted([f for f in os.listdir(img_dir) if f.endswith('.jpg')])
-    
-    first_img = img_files[0] if img_files else None
-    
-    if first_img and not first_img.isdigit():
-        print(f"Renaming images in {img_dir} to match YOLOv8 requirements...")
-        for i, img_file in enumerate(img_files, 1):
-            new_name = f"{i:06d}.jpg"
-            os.rename(
-                os.path.join(img_dir, img_file),
-                os.path.join(img_dir, new_name)
-            )
-        print(f"Renamed {len(img_files)} images.")
-    
-    return True
+def train_yolo_model(data_path,
+                     weights_path='yolov8s.pt',
+                     epochs=50,
+                     batch_size=16,
+                     img_size=640,
+                     save_period=5,
+                     device='0',
+                     project='runs/soccer',
+                     name='player_ball_detection'):
+    model = YOLO('yolov8m.pt')
+    train_kwargs = {
+        'data': data_path,
+        'epochs': epochs,
+        'batch': batch_size,
+        'imgsz': img_size,
+        'save_period': save_period,
+        'device': device,
+        'project': project,
+        'name': name,
+        'cos_lr': True,
+        'warmup_epochs': 5.0,
+        'patience': 10,
+        'mosaic': 1.0,
+        'mixup': 0.5,
+        'copy_paste': 0.5,
+        'hsv_h': 0.02,
+        'hsv_s': 0.7,
+        'hsv_v': 0.4,
+        'flipud': 0.5,
+        'rotate': 15,
+        'translate': 0.1,
+        'scale': 0.5,
+        'lr0': 0.001,
+        'lrf': 0.0001,
+        'momentum': 0.937,
+        'weight_decay': 0.0005,
+    }
+    results = model.train(**train_kwargs)
+    def detect_with_tuned_nms(source, conf_thresh=0.25, iou_thresh=0.3):
+        return model.predict(source=source, conf=conf_thresh, iou=iou_thresh, multi_label=True)
+    print(f"Training complete. Best model saved to {project}/{name}/weights/best.pt")
+    return model, detect_with_tuned_nms
 
 def prepare_yolo_dataset(check_names=True):
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Define YOLOv8 standard directory structure
     dataset_dir = os.path.join(base_dir, 'dataset')
     train_images_dir = os.path.join(dataset_dir, 'train', 'images')
     train_labels_dir = os.path.join(dataset_dir, 'train', 'labels')
     val_images_dir = os.path.join(dataset_dir, 'val', 'images')
     val_labels_dir = os.path.join(dataset_dir, 'val', 'labels')
-    
-    # Create directories if they don't exist
+
+    # ensure dirs
     os.makedirs(train_images_dir, exist_ok=True)
     os.makedirs(train_labels_dir, exist_ok=True)
     os.makedirs(val_images_dir, exist_ok=True)
     os.makedirs(val_labels_dir, exist_ok=True)
-    
-    # Paths for training data
-    train_gt_dir = os.path.join(base_dir, 'RBK_TDT17/1_train-val_1min_aalesund_from_start/gt')
-    train_img1_dir = os.path.join(base_dir, 'RBK_TDT17/1_train-val_1min_aalesund_from_start/img1')
-    
-    # Paths for validation data
-    val_gt_dir = os.path.join(base_dir, 'RBK_TDT17/2_train-val_1min_after_goal/gt')
-    val_img1_dir = os.path.join(base_dir, 'RBK_TDT17/2_train-val_1min_after_goal/img1')
-    
-    print(f"Copying/linking images to YOLOv8 standard directory structure...")
-    
-    # Copy training images
-    for img_file in os.listdir(train_img1_dir):
+
+    # Define train and val sets
+    train_sets = [
+        'RBK_TDT17/1_train-val_1min_aalesund_from_start',
+        'RBK_TDT17/2_train-val_1min_after_goal'
+    ]
+    val_set = 'RBK_TDT17/3_test_1min_hamkam_from_start'
+
+    # Copy training images and convert GT
+    total_train = 0
+    for ts in train_sets:
+        img_dir = os.path.join(base_dir, ts, 'img1')
+        gt_dir = os.path.join(base_dir, ts, 'gt')
+        for img_file in os.listdir(img_dir):
+            if img_file.endswith('.jpg'):
+                dst = os.path.join(train_images_dir, img_file)
+                if not os.path.exists(dst):
+                    shutil.copy(os.path.join(img_dir, img_file), dst)
+        total_train += convert_gt_to_yolo_format(gt_dir, train_labels_dir, img_dir)
+
+    # Copy validation images and convert GT
+    val_img_dir = os.path.join(base_dir, val_set, 'img1')
+    val_gt_dir = os.path.join(base_dir, val_set, 'gt')
+    for img_file in os.listdir(val_img_dir):
         if img_file.endswith('.jpg'):
-            src = os.path.join(train_img1_dir, img_file)
-            dst = os.path.join(train_images_dir, img_file)
-            if not os.path.exists(dst):
-                shutil.copy(src, dst)
-    
-    # Copy validation images
-    for img_file in os.listdir(val_img1_dir):
-        if img_file.endswith('.jpg'):
-            src = os.path.join(val_img1_dir, img_file)
             dst = os.path.join(val_images_dir, img_file)
             if not os.path.exists(dst):
-                shutil.copy(src, dst)
-    
-    # Convert ground truth to YOLO format
-    train_count = convert_gt_to_yolo_format(train_gt_dir, train_labels_dir, train_images_dir)
-    val_count = convert_gt_to_yolo_format(val_gt_dir, val_labels_dir, val_images_dir)
-    
-    if train_count == 0 or val_count == 0:
+                shutil.copy(os.path.join(val_img_dir, img_file), dst)
+    total_val = convert_gt_to_yolo_format(val_gt_dir, val_labels_dir, val_img_dir)
+
+    if total_train == 0 or total_val == 0:
         print("Warning: No labels were created. Please check your ground truth files.")
         return False
-    
-    # Verify dataset integrity
-    train_images_list = set([os.path.splitext(f)[0] for f in os.listdir(train_images_dir) if f.endswith('.jpg')])
-    train_labels_list = set([os.path.splitext(f)[0] for f in os.listdir(train_labels_dir) if f.endswith('.txt')])
-    
-    val_images_list = set([os.path.splitext(f)[0] for f in os.listdir(val_images_dir) if f.endswith('.jpg')])
-    val_labels_list = set([os.path.splitext(f)[0] for f in os.listdir(val_labels_dir) if f.endswith('.txt')])
-    
-    print(f"Training set: {len(train_images_list)} images, {len(train_labels_list)} label files")
-    print(f"Validation set: {len(val_images_list)} images, {len(val_labels_list)} label files")
-    
-    print(f"Dataset prepared successfully with {train_count} training and {val_count} validation frames.")
+
+    # summary
+    print(f"Training set: {len(os.listdir(train_images_dir))} images, {len(os.listdir(train_labels_dir))} labels")
+    print(f"Validation set: {len(os.listdir(val_images_dir))} images, {len(os.listdir(val_labels_dir))} labels")
+    print(f"Dataset prepared: {total_train} train annotations, {total_val} val annotations")
     return True
 
 def main():
     if not prepare_yolo_dataset():
         print("Error preparing dataset. Exiting.")
         return
-    
-    data_yaml_path = create_dataset_yaml()
-    
-    weights_path = 'yolov8s.pt'
-    epochs = 50
-    batch_size = 8
-    img_size = 640
+    data_yaml = create_dataset_yaml()
     device = '0' if torch.cuda.is_available() else 'cpu'
-    project = 'runs/soccer'
-    name = 'player_ball_detection'
-    
     print(f"Starting training on device: {device}")
-    print(f"Using dataset config: {data_yaml_path}")
-    print(f"Training for {epochs} epochs with batch size {batch_size}")
-    
-    model = train_yolo_model(
-        data_yaml_path,
-        weights_path,
-        epochs,
-        batch_size,
-        img_size,
+    model, _ = train_yolo_model(
+        data_path=data_yaml,
+        weights_path='yolov8s.pt',
+        epochs=50,
+        batch_size=8,
+        img_size=640,
         save_period=5,
         device=device,
-        project=project,
-        name=name
+        project='soccer',
+        name='player_ball_detection'
     )
-    
-    print(f"\nTraining complete!")
-    print(f"Model weights saved in {project}/{name}/weights/")
-    print("Use 'best.pt' for inference on new data.")
 
 if __name__ == '__main__':
     main()

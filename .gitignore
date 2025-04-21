@@ -14,6 +14,8 @@ runs/
 dataset/
 data/
 
+FootAndBall/
+
 # Distribution / packaging
 .Python
 build/
