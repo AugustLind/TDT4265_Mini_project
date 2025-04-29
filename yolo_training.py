@@ -38,6 +38,11 @@ IMG_SIZE = 1024
 PROJECT_NAME = 'runs/soccer_training'
 RUN_NAME = 'exp'
 DEVICE = '0' if torch.cuda.is_available() else 'cpu'
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    torch.cuda.reset_peak_memory_stats()
+
 
 # --- Helper Functions ---
 
@@ -179,7 +184,7 @@ if __name__ == '__main__':
 
     model.train(
         data=data_yaml,
-        epochs=50,               # 20 runder fokus KUN på ball
+        epochs=100,               # 20 runder fokus KUN på ball
         batch=BATCH_SIZE,
         imgsz=IMG_SIZE,
         device=DEVICE,
