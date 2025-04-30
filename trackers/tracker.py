@@ -12,7 +12,8 @@ import pandas as pd
 class Tracker:
     def __init__(self, model_path='weights/best.pt'):
         self.model = YOLO(model_path)
-        self.tracker = sv.ByteTrack(track_buffer=30)
+        self.tracker = sv.ByteTrack(track_buffer=50)
+        self.model_ball = YOLO("best_ball.pt")
 
     def detect_frames(self, frames):
         batch_size = 20
@@ -20,7 +21,7 @@ class Tracker:
         for i in range(0, len(frames), batch_size):
             batch = self.model.predict(
                 source=frames[i:i+batch_size],
-                conf=0.2, iou=0.5, imgsz=1024
+                conf=0.3, iou=0.5, imgsz=1024,
             )
             detections += batch
         return detections
@@ -55,31 +56,97 @@ class Tracker:
             tracks["players"].append({})
             tracks["ball"].append({})
 
-            # assign tracked detections
+            # assign tracked detections for players
             for bbox, cls_id, trk_id in zip(trk.xyxy, trk.class_id, trk.tracker_id):
                 box = bbox.tolist()
                 if cls_id == person_cls:
                     tracks["players"][idx][trk_id] = {"bbox": box}
-                elif cls_id == ball_cls:
-                    tracks["ball"][idx][trk_id]   = {"bbox": box}
 
-            # also ensure we at least get any ball as ID=1
-            for bbox, cls_id in zip(sup.xyxy, sup.class_id):
-                if cls_id == ball_cls:
-                    tracks["ball"][idx][1] = {"bbox": bbox.tolist()}
-
+            # For ball - find the best ball detection (highest confidence)
+            best_ball_conf = -1
+            best_ball_bbox = None
+            
+            # First check tracked balls
+            for bbox, cls_id, conf, trk_id in zip(trk.xyxy, trk.class_id, trk.confidence, trk.tracker_id):
+                if cls_id == ball_cls and conf > best_ball_conf:
+                    best_ball_conf = conf
+                    best_ball_bbox = bbox.tolist()
+            
+            # Also check untracked detections
+            for bbox, cls_id, conf in zip(sup.xyxy, sup.class_id, sup.confidence):
+                if cls_id == ball_cls and conf > best_ball_conf:
+                    best_ball_conf = conf
+                    best_ball_bbox = bbox.tolist()
+                    
+            # If we found a ball, add it with ID=1
+            if best_ball_bbox is not None:
+                tracks["ball"][idx][1] = {"bbox": best_ball_bbox}
+            
             # 3) Second-pass if no ball found
             if not tracks["ball"][idx]:
-                single = self.model.predict(
-                    source=frames[idx],
-                    conf=0.2, iou=0.5, imgsz=1024,
-                    classes=[ball_cls]
+                frame = frames[idx]
+                h, w = frame.shape[:2]
+
+                # --- compute crop window from previous frames' ball (if any) ---
+                found_ball = False
+                max_lookback = 30  # Maximum number of frames to look back
+                
+                if idx > 0:
+                    # Look back through previous frames until we find a ball
+                    for prev_idx in range(idx-1, max(idx-max_lookback-1, -1), -1):
+                        if tracks["ball"][prev_idx] and 1 in tracks["ball"][prev_idx]:
+                            prev = tracks["ball"][prev_idx][1]["bbox"]
+                            x1, y1, x2, y2 = map(int, prev)
+                            
+                            # Calculate distance in frames and adjust expansion
+                            frames_ago = idx - prev_idx
+                            # Make search area larger the further back we go
+                            expansion = min(250 + frames_ago * 10, 500)
+                            
+                            # expand by calculated amount, but clamp to image bounds
+                            cx1 = max(0, x1 - expansion)
+                            cy1 = max(0, y1 - expansion)
+                            cx2 = min(w, x2 + expansion)
+                            cy2 = min(h, y2 + expansion)
+                            found_ball = True
+                            break
+                
+                if not found_ball:
+                    # fallback to entire frame if no previous ball found
+                    cx1, cy1, cx2, cy2 = 0, 0, w, h
+
+                crop = frame[cy1:cy2, cx1:cx2]
+
+                # run ball-only detector on the cropped region
+                single = self.model_ball.predict(
+                    source=crop,
+                    conf=0.15,
+                    iou=0.3,
+                    imgsz=1024,
+                    classes=[ball_cls],
+                    augment=True,
+                    agnostic_nms=True,
                 )
                 single_sup = sv.Detections.from_ultralytics(single[0])
-                for bbox, cls_id in zip(single_sup.xyxy, single_sup.class_id):
-                    if cls_id == ball_cls:
-                        tracks["ball"][idx][1] = {"bbox": bbox.tolist()}
-                        break
+
+                # adjust any detections back to full-frame coords
+                best_ball_conf = -1
+                best_ball_bbox = None
+                for bbox, cls_id, conf in zip(single_sup.xyxy, single_sup.class_id, single_sup.confidence):
+                    if cls_id == ball_cls and conf > best_ball_conf:
+                        bx1, by1, bx2, by2 = bbox.tolist()
+                        # map from crop-coords → full-image coords
+                        full_bbox = [
+                            bx1 + cx1,
+                            by1 + cy1,
+                            bx2 + cx1,
+                            by2 + cy1
+                        ]
+                        best_ball_conf = conf
+                        best_ball_bbox = full_bbox
+
+                if best_ball_bbox is not None:
+                    tracks["ball"][idx][1] = {"bbox": best_ball_bbox}
 
         # 4) Optionally save
         if stuble_path:

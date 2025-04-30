@@ -20,17 +20,7 @@ def main():
         print(f"No image files found in {input_dir}")
         return
 
-    tracker = Tracker("best.pt")
-
-
-    tracks  = tracker.get_object_tracks(
-        image_files,
-        read_from_stuble=True,
-        stuble_path="stubs/tracks_stuble.pkl"
-    )
-
-    tracks["ball"] = tracker.interpolate_ball_positions(tracks["ball"])
-    # 1) load all images into memory
+    # 1) load all images into memory first
     frames = []
     for p in image_files:
         img = cv2.imread(p)
@@ -39,12 +29,23 @@ def main():
             continue
         frames.append(img)
 
-    # 2) draw your annotations on the numpy arrays
+    tracker = Tracker("best.pt")
+
+    # 2) Pass the actual frames (not paths) to get_object_tracks
+    tracks = tracker.get_object_tracks(
+        frames,
+        read_from_stuble=True,
+        stuble_path="stubs/tracks_stuble.pkl"
+    )
+
+    tracks["ball"] = tracker.interpolate_ball_positions(tracks["ball"])
+
+    # 3) draw your annotations on the numpy arrays
     annotated_frames = tracker.draw_annotations(frames, tracks)
 
     saved_count = 0
 
-    # 3) save each annotated frame, matching it back to its filename
+    # 4) save each annotated frame, matching it back to its filename
     for idx, frame in enumerate(annotated_frames):
         base_filename = os.path.basename(image_files[idx])
         try:

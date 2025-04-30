@@ -40,7 +40,6 @@ RUN_NAME = 'exp'
 DEVICE = '0' if torch.cuda.is_available() else 'cpu'
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
     torch.cuda.reset_peak_memory_stats()
 
 
@@ -176,7 +175,7 @@ if __name__ == '__main__':
     data_yaml = create_data_yaml()
 
     # 3. Initialize YOLO model
-    model = YOLO("yolov8m.pt")  
+    model = YOLO("pre_trained.pt")  
 
     # 4. Train the model
     print(f"Starting training on device: {DEVICE}")
@@ -184,17 +183,76 @@ if __name__ == '__main__':
 
     model.train(
         data=data_yaml,
-        epochs=100,               # 20 runder fokus KUN på ball
+        epochs=60,
         batch=BATCH_SIZE,
-        imgsz=IMG_SIZE,
+        imgsz=1024,
         device=DEVICE,
         project=PROJECT_NAME,
-        name=RUN_NAME + "_ball_only",  # Nytt navn så vi holder ting ryddig
+        name=RUN_NAME + '_stage1_ball',
         exist_ok=True,
-        patience=10,             # Early stopping hvis det går dårlig
+        freeze=[0,1,2,3],
+        patience=15,
+        augment=True,
+        classes=[0],  # Only train on ball class
+        # Learning rate settings
+        lr0=0.01,
+        lrf=0.01,
+        momentum=0.937,
+        weight_decay=0.0005,
+        # Augmentation settings
+        hsv_h=0.015,
+        hsv_s=0.7,
+        hsv_v=0.4,
+        degrees=0.0,
+        translate=0.1,
+        scale=0.5,
+        shear=0.0,
+        flipud=0.0,
+        fliplr=0.5,
+        mosaic=1.0,
+        mixup=0.3,
+        # Loss weights
+        box=0.05,  # increased box loss weight for small objects
+        cls=0.5,
+        dfl=1.5,  # distribution focal loss weight
+    )
+
+    # Stage 2: full unfreeze, joint classes
+    best = os.path.join(PROJECT_NAME, f"{RUN_NAME}_stage1_ball/weights/best.pt")
+    model = YOLO(best)
+    model.train(
+        data=data_yaml,
+        epochs=80,
+        batch=BATCH_SIZE,
+        imgsz=1536,              # higher resolution
+        device=DEVICE,
+        project=PROJECT_NAME,
+        name=RUN_NAME + '_ball_only',
+        exist_ok=True,
+        patience=10,
         save_period=5,
-        classes=[0],             # 🔥 Kun ball (klasse 0)
-        verbose=True,
+        augment=True,
+        lr0=0.01,
+        lrf=0.01,
+        momentum=0.937,
+        weight_decay=0.0005,
+        classes=[0],  # Only train on ball class
+        # Augmentation settings
+        hsv_h=0.015,
+        hsv_s=0.7,
+        hsv_v=0.4,
+        degrees=0.0,
+        translate=0.1,
+        scale=0.5,
+        shear=0.0,
+        flipud=0.0,
+        fliplr=0.5,
+        mosaic=1.0,
+        mixup=0.3,
+        # Loss weights
+        box=0.05,  # increased box loss weight for small objects
+        cls=0.5,
+        dfl=1.5,  # distribution focal loss weight
     )
 
     # Last det beste fra steg 1
