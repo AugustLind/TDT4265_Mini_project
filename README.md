@@ -4,6 +4,23 @@ This project uses YOLOv8 object detection and ByteTrack tracking to identify and
 
 ## Project Structure
 
+├── create_video.py       # Script to assemble frames into video
+├── main.py               # Main script for tracking and annotation
+├── trackers/             # Tracking functionality
+│   ├── __init__.py
+│   └── tracker.py        # Tracker class implementation
+├── utils/                # Utility functions
+│   ├── __init__.py
+│   ├── bbox_utils.py     # Bounding box utilities
+│   └── img_utils.py      # Image handling utilities
+├── yolo_training.py      # Script for YOLO model training
+├── best.pt               # Trained player detection model
+├── best_ball.pt          # Specialized ball detection model
+├── pre_trained.pt        # Pre-trained model for fine-tuning
+├── data.yaml             # Dataset configuration
+├── requirements.txt      # Project dependencies
+└── frames_output/        # Directory for annotated output frames
+
 ## Setup
 
 1.  **Clone the repository:**
@@ -11,11 +28,11 @@ This project uses YOLOv8 object detection and ByteTrack tracking to identify and
     git clone <your-repository-url>
     cd <repository-directory>
     ```
-2.  **Install dependencies:** (You might need to create a `requirements.txt` file first)
+2.  **Install dependencies:** t)
     ```bash
-    pip install ultralytics supervision opencv-python pandas numpy pyyaml
+    pip install -r requirements.txt
     ```
-3.  **Data:** Ensure the raw data is present in the `RBK_TDT17` directory as expected by the scripts, or modify the paths in the scripts.
+3.  **Data:** Ensure the raw data is present in the `RBK_TDT17` directory as expected by the scripts, or modify the paths in the scripts. You may use your own data instead.
 
 ## Usage
 

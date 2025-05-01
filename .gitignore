@@ -15,6 +15,7 @@ dataset/
 data/
 *.mp4
 FootAndBall/
+frames_output/
 
 # Distribution / packaging
 .Python
