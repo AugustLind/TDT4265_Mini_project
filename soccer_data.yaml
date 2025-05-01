@@ -1,0 +1,9 @@
+path: /home/ascend/repos/TDT4265_Mini_project/dataset
+train: train/images
+val: val/images
+test: test/images
+final_val: final_val/images
+names:
+  0: ball
+  1: person
+nc: 2

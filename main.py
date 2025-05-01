@@ -1,17 +1,55 @@
+from utils import save_image
 import os
-from tasks.detection import DetectAndAnnotate
-from tasks.tracking import TrackAndAnnotate
+import cv2
+from trackers import Tracker
 
-system_directory = os.getcwd()
-input_file_path = f"{system_directory}/RBK_TDT17/1_train-val_1min_aalesund_from_start/img1"
-output_file_path = f"{system_directory}/tracked_output"
+def main():
+    input_dir  = "RBK_TDT17/4_annotate_1min_bodo_start/img1"
+    output_dir = "frames_output"
 
+    os.makedirs(output_dir, exist_ok=True)
 
-def run():
-    process = TrackAndAnnotate(input_file_path=input_file_path, output_file_path=output_file_path)
-    process.track_and_anotate()
+    image_files = sorted(
+        os.path.join(input_dir, f)
+        for f in os.listdir(input_dir)
+        if os.path.isfile(os.path.join(input_dir, f))
+    )
 
+    if not image_files:
+        print(f"No image files found in {input_dir}")
+        return
 
+    frames = []
+    for p in image_files:
+        img = cv2.imread(p)
+        if img is None:
+            print(f"Warning: failed to read {p}")
+            continue
+        frames.append(img)
 
+    tracker = Tracker("best.pt")
 
-run()
+    tracks = tracker.get_object_tracks(
+        frames,
+        read_from_stuble=True,
+        stuble_path="stubs/tracks_stuble.pkl"
+    )
+
+    tracks["ball"] = tracker.interpolate_ball_positions(tracks["ball"])
+
+    annotated_frames = tracker.draw_annotations(frames, tracks)
+
+    saved_count = 0
+
+    for idx, frame in enumerate(annotated_frames):
+        base_filename = os.path.basename(image_files[idx])
+        try:
+            save_image(frame, output_dir, base_filename)
+            saved_count += 1
+        except Exception as e:
+            print(f"Error saving image {base_filename}: {e}")
+
+    print(f"{saved_count} images saved to {output_dir}")
+
+if __name__ == "__main__":
+    main()
